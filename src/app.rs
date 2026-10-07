@@ -8,7 +8,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::canvas::Canvas;
-use crate::vector::Vec3;
+use crate::vector::{Vec2, Vec3};
 
 const GRID_SIZE: usize = 9;
 const N_POINTS: usize = GRID_SIZE * GRID_SIZE * GRID_SIZE;
@@ -17,7 +17,9 @@ const N_POINTS: usize = GRID_SIZE * GRID_SIZE * GRID_SIZE;
 struct App {
     context: Context<OwnedDisplayHandle>,
     state: AppState,
-    cube_point: [Vec3; N_POINTS]
+    cube_points: [Vec3; N_POINTS],
+    projected_point: [Vec2; N_POINTS],
+    fov_factor: f32,
 }
 
 #[derive(Debug)]
@@ -63,8 +65,9 @@ impl ApplicationHandler for App {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        let AppState::Running { window, surface } = &mut self.state else {
-            return;
+        let window = match &self.state {
+            AppState::Running { window, .. } => window.clone(),
+            AppState::Initial => return,
         };
 
         if window.id() != window_id {
@@ -84,8 +87,9 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::Resized(size) => {
-                if let (Some(width), Some(height)) =
-                    (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
+                if let AppState::Running { surface, .. } = &mut self.state
+                    && let (Some(width), Some(height)) =
+                        (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
                 {
                     surface.resize(width, height).unwrap();
                 }
@@ -99,14 +103,8 @@ impl ApplicationHandler for App {
                     return;
                 }
 
-                if let Ok(mut buffer) = surface.buffer_mut() {
-                    let mut canvas = Canvas::new(&mut buffer, width, height);
-                    canvas.clear(0xFF000000);
-                    canvas.draw_grid(0xFF333333);
-                    canvas.draw_rect(100, 100, 200, 150, 0xFFFF0000);
-
-                    let _ = buffer.present();
-                }
+                self.update();
+                self.render(width, height);
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -125,10 +123,44 @@ impl App {
                 let y = -1.0 + yi as f32 * 0.25;
                 for zi in 0..GRID_SIZE {
                     let z = -1.0 + zi as f32 * 0.25;
-                    self.cube_point[point_count] = Vec3 { x, y, z };
+                    self.cube_points[point_count] = Vec3 { x, y, z };
                     point_count += 1;
                 }
             }
+        }
+    }
+
+    fn render(&mut self, width: usize, height: usize) {
+        if let AppState::Running { surface, .. } = &mut self.state
+            && let Ok(mut buffer) = surface.buffer_mut()
+        {
+            let mut canvas = Canvas::new(&mut buffer, width, height);
+            canvas.clear(0xFF000000);
+            canvas.draw_grid(0xFF333333);
+
+            for i in 0..N_POINTS {
+                let projected_point = self.projected_point[i];
+                let x = (projected_point.x + width as f32 / 2.0) as usize;
+                let y = (projected_point.y + height as f32 / 2.0) as usize;
+                canvas.draw_rect(x, y, 4, 4, 0xFFFFFF00);
+            }
+
+            let _ = buffer.present();
+        }
+    }
+
+    fn update(&mut self) {
+        for i in 0..N_POINTS {
+            let point = self.cube_points[i];
+            let projected_point = self.orthographic_project(point);
+            self.projected_point[i] = projected_point;
+        }
+    }
+
+    fn orthographic_project(&self, point: Vec3) -> Vec2 {
+        Vec2 {
+            x: point.x * self.fov_factor,
+            y: point.y * self.fov_factor,
         }
     }
 }
@@ -139,7 +171,9 @@ pub fn run_event_loop() {
     let mut app = App {
         context,
         state: AppState::Initial,
-        cube_point: [Vec3::default(); N_POINTS]
+        cube_points: [Vec3::default(); N_POINTS],
+        projected_point: [Vec2::default(); N_POINTS],
+        fov_factor: 120.0,
     };
     app.init_cube();
     event_loop.run_app(&mut app).unwrap();
