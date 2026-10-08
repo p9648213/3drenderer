@@ -20,6 +20,7 @@ struct App {
     cube_points: [Vec3; N_POINTS],
     projected_point: [Vec2; N_POINTS],
     fov_factor: f32,
+    camera_position: Vec3,
 }
 
 #[derive(Debug)]
@@ -151,16 +152,17 @@ impl App {
 
     fn update(&mut self) {
         for i in 0..N_POINTS {
-            let point = self.cube_points[i];
-            let projected_point = self.orthographic_project(point);
+            let mut point = self.cube_points[i];
+            point.z -= self.camera_position.z;
+            let projected_point = self.perspective_project(point);
             self.projected_point[i] = projected_point;
         }
     }
 
-    fn orthographic_project(&self, point: Vec3) -> Vec2 {
+    fn perspective_project(&self, point: Vec3) -> Vec2 {
         Vec2 {
-            x: point.x * self.fov_factor,
-            y: point.y * self.fov_factor,
+            x: self.fov_factor * (point.x / point.z),
+            y: self.fov_factor * (point.y / point.z),
         }
     }
 }
@@ -173,7 +175,12 @@ pub fn run_event_loop() {
         state: AppState::Initial,
         cube_points: [Vec3::default(); N_POINTS],
         projected_point: [Vec2::default(); N_POINTS],
-        fov_factor: 120.0,
+        fov_factor: 640.0,
+        camera_position: Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: -5.0,
+        },
     };
     app.init_cube();
     event_loop.run_app(&mut app).unwrap();
