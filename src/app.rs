@@ -1,6 +1,7 @@
 use softbuffer::{Context, Surface};
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::time;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop, OwnedDisplayHandle};
@@ -8,10 +9,12 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::canvas::Canvas;
-use crate::vector::{Vec2, Vec3};
+use crate::vector::{Vec2, Vec3, vec3_rotate_x, vec3_rotate_y, vec3_rotate_z};
 
 const GRID_SIZE: usize = 9;
 const N_POINTS: usize = GRID_SIZE * GRID_SIZE * GRID_SIZE;
+const FPS: u64 = 30;
+const FRAME_TARGET_TIME: time::Duration = time::Duration::from_millis(1000 / FPS);
 
 #[derive(Debug)]
 struct App {
@@ -21,6 +24,8 @@ struct App {
     projected_point: [Vec2; N_POINTS],
     fov_factor: f32,
     camera_position: Vec3,
+    cube_rotation: Vec3,
+    previous_frame_time: time::Instant,
 }
 
 #[derive(Debug)]
@@ -54,9 +59,12 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if let AppState::Running { window, .. } = &self.state {
             window.request_redraw();
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                self.previous_frame_time + FRAME_TARGET_TIME,
+            ));
         }
     }
 
@@ -151,10 +159,27 @@ impl App {
     }
 
     fn update(&mut self) {
+        let now = time::Instant::now();
+
+        if now - self.previous_frame_time < FRAME_TARGET_TIME {
+            return;
+        }
+        
+        self.previous_frame_time = now;
+
+        self.cube_rotation.x += 0.01;
+        self.cube_rotation.y += 0.01;
+        self.cube_rotation.z += 0.01;
+
         for i in 0..N_POINTS {
-            let mut point = self.cube_points[i];
-            point.z -= self.camera_position.z;
-            let projected_point = self.perspective_project(point);
+            let point = self.cube_points[i];
+
+            let mut transformed_point = vec3_rotate_x(point, self.cube_rotation.x);
+            transformed_point = vec3_rotate_y(transformed_point, self.cube_rotation.y);
+            transformed_point = vec3_rotate_z(transformed_point, self.cube_rotation.z);
+
+            transformed_point.z -= self.camera_position.z;
+            let projected_point = self.perspective_project(transformed_point);
             self.projected_point[i] = projected_point;
         }
     }
@@ -181,6 +206,8 @@ pub fn run_event_loop() {
             y: 0.0,
             z: -5.0,
         },
+        cube_rotation: Vec3::default(),
+        previous_frame_time: std::time::Instant::now(),
     };
     app.init_cube();
     event_loop.run_app(&mut app).unwrap();
