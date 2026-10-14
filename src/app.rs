@@ -9,10 +9,10 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::canvas::Canvas;
+use crate::mesh::{N_MESH_FACES, N_MESH_VERTICES};
+use crate::triangle::{Face, Triangle};
 use crate::vector::{Vec2, Vec3, vec3_rotate_x, vec3_rotate_y, vec3_rotate_z};
 
-const GRID_SIZE: usize = 9;
-const N_POINTS: usize = GRID_SIZE * GRID_SIZE * GRID_SIZE;
 const FPS: u64 = 30;
 const FRAME_TARGET_TIME: time::Duration = time::Duration::from_millis(1000 / FPS);
 
@@ -20,12 +20,13 @@ const FRAME_TARGET_TIME: time::Duration = time::Duration::from_millis(1000 / FPS
 struct App {
     context: Context<OwnedDisplayHandle>,
     state: AppState,
-    cube_points: [Vec3; N_POINTS],
-    projected_point: [Vec2; N_POINTS],
     fov_factor: f32,
     camera_position: Vec3,
     cube_rotation: Vec3,
     previous_frame_time: time::Instant,
+    mesh_vertices: [Vec3; N_MESH_VERTICES],
+    mesh_faces: [Face; N_MESH_FACES],
+    triangle_to_render: [Triangle; N_MESH_FACES],
 }
 
 #[derive(Debug)]
@@ -112,7 +113,7 @@ impl ApplicationHandler for App {
                     return;
                 }
 
-                self.update();
+                self.update(width, height);
                 self.render(width, height);
             }
             WindowEvent::CloseRequested => {
@@ -124,21 +125,6 @@ impl ApplicationHandler for App {
 }
 
 impl App {
-    fn init_cube(&mut self) {
-        let mut point_count: usize = 0;
-        for xi in 0..GRID_SIZE {
-            let x = -1.0 + xi as f32 * 0.25;
-            for yi in 0..GRID_SIZE {
-                let y = -1.0 + yi as f32 * 0.25;
-                for zi in 0..GRID_SIZE {
-                    let z = -1.0 + zi as f32 * 0.25;
-                    self.cube_points[point_count] = Vec3 { x, y, z };
-                    point_count += 1;
-                }
-            }
-        }
-    }
-
     fn render(&mut self, width: usize, height: usize) {
         if let AppState::Running { surface, .. } = &mut self.state
             && let Ok(mut buffer) = surface.buffer_mut()
@@ -147,40 +133,76 @@ impl App {
             canvas.clear(0xFF000000);
             canvas.draw_grid(0xFF333333);
 
-            for i in 0..N_POINTS {
-                let projected_point = self.projected_point[i];
-                let x = (projected_point.x + width as f32 / 2.0) as usize;
-                let y = (projected_point.y + height as f32 / 2.0) as usize;
-                canvas.draw_rect(x, y, 4, 4, 0xFFFFFF00);
+            for i in 0..N_MESH_FACES {
+                let triangle = &self.triangle_to_render[i];
+                canvas.draw_rect(
+                    triangle.point[0].x as usize,
+                    triangle.point[0].y as usize,
+                    3,
+                    3,
+                    0xFFFFFF00,
+                );
+                canvas.draw_rect(
+                    triangle.point[1].x as usize,
+                    triangle.point[1].y as usize,
+                    3,
+                    3,
+                    0xFFFFFF00,
+                );
+                canvas.draw_rect(
+                    triangle.point[2].x as usize,
+                    triangle.point[2].y as usize,
+                    3,
+                    3,
+                    0xFFFFFF00,
+                );
             }
 
             let _ = buffer.present();
         }
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, width: usize, height: usize) {
         let now = time::Instant::now();
 
         if now - self.previous_frame_time < FRAME_TARGET_TIME {
             return;
         }
-        
+
         self.previous_frame_time = now;
 
         self.cube_rotation.x += 0.01;
         self.cube_rotation.y += 0.01;
         self.cube_rotation.z += 0.01;
 
-        for i in 0..N_POINTS {
-            let point = self.cube_points[i];
+        for i in 0..N_MESH_FACES {
+            let mesh_face = &self.mesh_faces[i];
 
-            let mut transformed_point = vec3_rotate_x(point, self.cube_rotation.x);
-            transformed_point = vec3_rotate_y(transformed_point, self.cube_rotation.y);
-            transformed_point = vec3_rotate_z(transformed_point, self.cube_rotation.z);
+            let mut face_vertices: [Vec3; 3] = [Vec3::default(), Vec3::default(), Vec3::default()];
 
-            transformed_point.z -= self.camera_position.z;
-            let projected_point = self.perspective_project(transformed_point);
-            self.projected_point[i] = projected_point;
+            face_vertices[0] = self.mesh_vertices[(mesh_face.a - 1) as usize];
+            face_vertices[1] = self.mesh_vertices[(mesh_face.b - 1) as usize];
+            face_vertices[2] = self.mesh_vertices[(mesh_face.c - 1) as usize];
+
+            let mut  projected_triangle = Triangle::default();
+
+            (0..3).for_each(|j| {
+                let mut transformed_vertex = face_vertices[j];
+                transformed_vertex = vec3_rotate_x(transformed_vertex, self.cube_rotation.x);
+                transformed_vertex = vec3_rotate_y(transformed_vertex, self.cube_rotation.y);
+                transformed_vertex = vec3_rotate_z(transformed_vertex, self.cube_rotation.z);
+
+                transformed_vertex.z -= self.camera_position.z;
+
+                let mut projected_points = self.perspective_project(transformed_vertex);
+
+                projected_points.x += width as f32 / 2.0;
+                projected_points.y += height as f32 / 2.0;
+
+                projected_triangle.point[j] = projected_points;
+            });
+
+            self.triangle_to_render[i] = projected_triangle;
         }
     }
 
@@ -192,14 +214,14 @@ impl App {
     }
 }
 
+#[rustfmt::skip]
 pub fn run_event_loop() {
     let event_loop = EventLoop::new().unwrap();
     let context = Context::new(event_loop.owned_display_handle()).unwrap();
+
     let mut app = App {
         context,
         state: AppState::Initial,
-        cube_points: [Vec3::default(); N_POINTS],
-        projected_point: [Vec2::default(); N_POINTS],
         fov_factor: 640.0,
         camera_position: Vec3 {
             x: 0.0,
@@ -208,7 +230,45 @@ pub fn run_event_loop() {
         },
         cube_rotation: Vec3::default(),
         previous_frame_time: std::time::Instant::now(),
+        mesh_vertices: [
+            Vec3 { x: -1.0, y: -1.0, z: -1.0 },
+            Vec3 { x: -1.0, y: 1.0, z: -1.0 },
+            Vec3 { x: 1.0, y: 1.0, z: -1.0 },
+            Vec3 { x: 1.0, y: -1.0, z: -1.0 },
+            Vec3 { x: 1.0, y: 1.0, z: 1.0 },
+            Vec3 { x: 1.0, y: -1.0, z: 1.0 },
+            Vec3 { x: -1.0, y: 1.0, z: 1.0 },
+            Vec3 { x: -1.0, y: -1.0, z: 1.0 }
+        ],
+        mesh_faces: [
+            Face { a: 1, b: 2, c: 3 },
+            Face { a: 1, b: 3, c: 4 },
+            Face { a: 4, b: 3, c: 5 },
+            Face { a: 4, b: 5, c: 6 },
+            Face { a: 6, b: 5, c: 7 },
+            Face { a: 6, b: 7, c: 8 },
+            Face { a: 8, b: 7, c: 2 },
+            Face { a: 8, b: 2, c: 1 },
+            Face { a: 2, b: 7, c: 5 },
+            Face { a: 2, b: 5, c: 3 },
+            Face { a: 6, b: 8, c: 1 },
+            Face { a: 6, b: 1, c: 4 }
+        ],
+        triangle_to_render: [
+            Triangle::default(),
+            Triangle::default(),
+            Triangle::default(),
+            Triangle::default(),
+            Triangle::default(),
+            Triangle::default(),
+            Triangle::default(),
+            Triangle::default(),
+            Triangle::default(),
+            Triangle::default(),
+            Triangle::default(),
+            Triangle::default(),
+        ]
     };
-    app.init_cube();
+
     event_loop.run_app(&mut app).unwrap();
 }
