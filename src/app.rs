@@ -135,6 +135,7 @@ impl App {
 
             for i in 0..N_MESH_FACES {
                 let triangle = &self.triangle_to_render[i];
+
                 canvas.draw_rect(
                     triangle.point[0].x as usize,
                     triangle.point[0].y as usize,
@@ -155,6 +156,16 @@ impl App {
                     3,
                     3,
                     0xFFFFFF00,
+                );
+
+                canvas.draw_triangle(
+                    triangle.point[0].x as usize,
+                    triangle.point[0].y as usize,
+                    triangle.point[1].x as usize,
+                    triangle.point[1].y as usize,
+                    triangle.point[2].x as usize,
+                    triangle.point[2].y as usize,
+                    0xFF00FF00,
                 );
             }
 
@@ -184,7 +195,7 @@ impl App {
             face_vertices[1] = self.mesh_vertices[(mesh_face.b - 1) as usize];
             face_vertices[2] = self.mesh_vertices[(mesh_face.c - 1) as usize];
 
-            let mut  projected_triangle = Triangle::default();
+            let mut projected_triangle = Triangle::default();
 
             (0..3).for_each(|j| {
                 let mut transformed_vertex = face_vertices[j];
