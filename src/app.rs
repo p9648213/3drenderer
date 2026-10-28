@@ -1,5 +1,6 @@
 use softbuffer::{Context, Surface};
 use std::num::NonZeroU32;
+use std::path::Path;
 use std::rc::Rc;
 use std::time;
 use winit::application::ApplicationHandler;
@@ -131,7 +132,7 @@ impl App {
             canvas.clear(0xFF000000);
             canvas.draw_grid(0xFF333333);
 
-            for i in 0..self.triangle_to_render.len() {
+            (0..self.triangle_to_render.len()).for_each(|i| {
                 let triangle = &self.triangle_to_render[i];
 
                 canvas.draw_rect(
@@ -165,7 +166,7 @@ impl App {
                     triangle.point[2].y as usize,
                     0xFF00FF00,
                 );
-            }
+            });
 
             let _ = buffer.present();
         }
@@ -244,7 +245,7 @@ pub fn run_event_loop() {
         triangle_to_render: Vec::new(),
     };
 
-    app.mesh.load_cube_mesh_data();
+    app.mesh.load_obj_file_data(Path::new("assets/f22.obj"));
 
     event_loop.run_app(&mut app).unwrap();
 }
