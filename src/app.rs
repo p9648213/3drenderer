@@ -9,8 +9,8 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
 use crate::canvas::Canvas;
-use crate::mesh::{N_MESH_FACES, N_MESH_VERTICES};
-use crate::triangle::{Face, Triangle};
+use crate::mesh::Mesh;
+use crate::triangle::Triangle;
 use crate::vector::{Vec2, Vec3, vec3_rotate_x, vec3_rotate_y, vec3_rotate_z};
 
 const FPS: u64 = 30;
@@ -22,11 +22,9 @@ struct App {
     state: AppState,
     fov_factor: f32,
     camera_position: Vec3,
-    cube_rotation: Vec3,
     previous_frame_time: time::Instant,
-    mesh_vertices: [Vec3; N_MESH_VERTICES],
-    mesh_faces: [Face; N_MESH_FACES],
-    triangle_to_render: [Triangle; N_MESH_FACES],
+    mesh: Mesh,
+    triangle_to_render: Vec<Triangle>,
 }
 
 #[derive(Debug)]
@@ -133,7 +131,7 @@ impl App {
             canvas.clear(0xFF000000);
             canvas.draw_grid(0xFF333333);
 
-            for i in 0..N_MESH_FACES {
+            for i in 0..self.triangle_to_render.len() {
                 let triangle = &self.triangle_to_render[i];
 
                 canvas.draw_rect(
@@ -182,26 +180,28 @@ impl App {
 
         self.previous_frame_time = now;
 
-        self.cube_rotation.x += 0.01;
-        self.cube_rotation.y += 0.01;
-        self.cube_rotation.z += 0.01;
+        self.triangle_to_render = Vec::new();
 
-        for i in 0..N_MESH_FACES {
-            let mesh_face = &self.mesh_faces[i];
+        self.mesh.rotation.x += 0.01;
+        self.mesh.rotation.y += 0.01;
+        self.mesh.rotation.z += 0.01;
+
+        for i in 0..self.mesh.faces.len() {
+            let mesh_face = &self.mesh.faces[i];
 
             let mut face_vertices: [Vec3; 3] = [Vec3::default(), Vec3::default(), Vec3::default()];
 
-            face_vertices[0] = self.mesh_vertices[(mesh_face.a - 1) as usize];
-            face_vertices[1] = self.mesh_vertices[(mesh_face.b - 1) as usize];
-            face_vertices[2] = self.mesh_vertices[(mesh_face.c - 1) as usize];
+            face_vertices[0] = self.mesh.vertices[(mesh_face.a - 1) as usize];
+            face_vertices[1] = self.mesh.vertices[(mesh_face.b - 1) as usize];
+            face_vertices[2] = self.mesh.vertices[(mesh_face.c - 1) as usize];
 
             let mut projected_triangle = Triangle::default();
 
             (0..3).for_each(|j| {
                 let mut transformed_vertex = face_vertices[j];
-                transformed_vertex = vec3_rotate_x(transformed_vertex, self.cube_rotation.x);
-                transformed_vertex = vec3_rotate_y(transformed_vertex, self.cube_rotation.y);
-                transformed_vertex = vec3_rotate_z(transformed_vertex, self.cube_rotation.z);
+                transformed_vertex = vec3_rotate_x(transformed_vertex, self.mesh.rotation.x);
+                transformed_vertex = vec3_rotate_y(transformed_vertex, self.mesh.rotation.y);
+                transformed_vertex = vec3_rotate_z(transformed_vertex, self.mesh.rotation.z);
 
                 transformed_vertex.z -= self.camera_position.z;
 
@@ -213,7 +213,7 @@ impl App {
                 projected_triangle.point[j] = projected_points;
             });
 
-            self.triangle_to_render[i] = projected_triangle;
+            self.triangle_to_render.push(projected_triangle);
         }
     }
 
@@ -239,47 +239,12 @@ pub fn run_event_loop() {
             y: 0.0,
             z: -5.0,
         },
-        cube_rotation: Vec3::default(),
         previous_frame_time: std::time::Instant::now(),
-        mesh_vertices: [
-            Vec3 { x: -1.0, y: -1.0, z: -1.0 },
-            Vec3 { x: -1.0, y: 1.0, z: -1.0 },
-            Vec3 { x: 1.0, y: 1.0, z: -1.0 },
-            Vec3 { x: 1.0, y: -1.0, z: -1.0 },
-            Vec3 { x: 1.0, y: 1.0, z: 1.0 },
-            Vec3 { x: 1.0, y: -1.0, z: 1.0 },
-            Vec3 { x: -1.0, y: 1.0, z: 1.0 },
-            Vec3 { x: -1.0, y: -1.0, z: 1.0 }
-        ],
-        mesh_faces: [
-            Face { a: 1, b: 2, c: 3 },
-            Face { a: 1, b: 3, c: 4 },
-            Face { a: 4, b: 3, c: 5 },
-            Face { a: 4, b: 5, c: 6 },
-            Face { a: 6, b: 5, c: 7 },
-            Face { a: 6, b: 7, c: 8 },
-            Face { a: 8, b: 7, c: 2 },
-            Face { a: 8, b: 2, c: 1 },
-            Face { a: 2, b: 7, c: 5 },
-            Face { a: 2, b: 5, c: 3 },
-            Face { a: 6, b: 8, c: 1 },
-            Face { a: 6, b: 1, c: 4 }
-        ],
-        triangle_to_render: [
-            Triangle::default(),
-            Triangle::default(),
-            Triangle::default(),
-            Triangle::default(),
-            Triangle::default(),
-            Triangle::default(),
-            Triangle::default(),
-            Triangle::default(),
-            Triangle::default(),
-            Triangle::default(),
-            Triangle::default(),
-            Triangle::default(),
-        ]
+        mesh: Mesh::default(),
+        triangle_to_render: Vec::new(),
     };
+
+    app.mesh.load_cube_mesh_data();
 
     event_loop.run_app(&mut app).unwrap();
 }

@@ -1,6 +1,6 @@
 use crate::vector::Vec2;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Face {
     pub a: i32,
     pub b: i32,
