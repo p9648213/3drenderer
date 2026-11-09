@@ -12,9 +12,9 @@ use winit::window::{Window, WindowId};
 use crate::canvas::Canvas;
 use crate::mesh::Mesh;
 use crate::triangle::Triangle;
-use crate::vector::{Vec2, Vec3, vec3_rotate_x, vec3_rotate_y, vec3_rotate_z};
+use crate::vector::{Vec2, Vec3, vec3_cross, vec3_dot, vec3_rotate_x, vec3_rotate_y, vec3_rotate_z, vec3_sub};
 
-const FPS: u64 = 30;
+const FPS: u64 = 60;
 const FRAME_TARGET_TIME: time::Duration = time::Duration::from_millis(1000 / FPS);
 
 #[derive(Debug)]
@@ -184,8 +184,8 @@ impl App {
         self.triangle_to_render = Vec::new();
 
         self.mesh.rotation.x += 0.01;
-        self.mesh.rotation.y += 0.01;
-        self.mesh.rotation.z += 0.01;
+        self.mesh.rotation.y += 0.00;
+        self.mesh.rotation.z += 0.00;
 
         for i in 0..self.mesh.faces.len() {
             let mesh_face = &self.mesh.faces[i];
@@ -196,17 +196,45 @@ impl App {
             face_vertices[1] = self.mesh.vertices[(mesh_face.b - 1) as usize];
             face_vertices[2] = self.mesh.vertices[(mesh_face.c - 1) as usize];
 
-            let mut projected_triangle = Triangle::default();
+            let mut transformed_vertices: [Vec3; 3] =
+                [Vec3::default(), Vec3::default(), Vec3::default()];
 
+            // Apply transformation
             (0..3).for_each(|j| {
                 let mut transformed_vertex = face_vertices[j];
+
                 transformed_vertex = vec3_rotate_x(transformed_vertex, self.mesh.rotation.x);
                 transformed_vertex = vec3_rotate_y(transformed_vertex, self.mesh.rotation.y);
                 transformed_vertex = vec3_rotate_z(transformed_vertex, self.mesh.rotation.z);
 
-                transformed_vertex.z -= self.camera_position.z;
+                transformed_vertex.z += -5.0;
 
-                let mut projected_points = self.perspective_project(transformed_vertex);
+                transformed_vertices[j] = transformed_vertex;
+            });
+
+            // Backface culling
+            let vector_a = transformed_vertices[0];
+            let vector_b = transformed_vertices[1];
+            let vector_c = transformed_vertices[2];
+
+            let vector_ab = vec3_sub(vector_b, vector_a);
+            let vector_ac = vec3_sub(vector_c, vector_a);
+
+            let normal = vec3_cross(vector_ab, vector_ac);
+
+            let camera_ray = vec3_sub(self.camera_position, vector_a);
+
+            let dot_normal_camera = vec3_dot(normal, camera_ray);
+
+            if dot_normal_camera < 0.0 {
+                continue;
+            }
+
+            // Projection
+            let mut projected_triangle = Triangle::default();
+
+            (0..3).for_each(|j| {
+                let mut projected_points = self.perspective_project(transformed_vertices[j]);
 
                 projected_points.x += width as f32 / 2.0;
                 projected_points.y += height as f32 / 2.0;
@@ -238,14 +266,14 @@ pub fn run_event_loop() {
         camera_position: Vec3 {
             x: 0.0,
             y: 0.0,
-            z: -5.0,
+            z: 0.0,
         },
         previous_frame_time: std::time::Instant::now(),
         mesh: Mesh::default(),
         triangle_to_render: Vec::new(),
     };
 
-    app.mesh.load_obj_file_data(Path::new("assets/f22.obj"));
+    app.mesh.load_obj_file_data(Path::new("assets/cube.obj"));
 
     event_loop.run_app(&mut app).unwrap();
 }
